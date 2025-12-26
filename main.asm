@@ -30,6 +30,7 @@ StopWDT     mov.w   #WDTPW|WDTHOLD,&WDTCTL  ; Stop watchdog timer
 pattern: .byte 0,0,0,0,0,0,0,0      ; 8 pattern capacity
 level_count: .byte 4               ; Number of levels (Easy, Medium, Hard, Nightmare)
 level_lengths: .byte 2,4,6,8       ; Level lengths for levels 1..4 respectively
+level_speeds: .byte 3,2,1,1        ; On-time speed per level (Easy -> Nightmare)
 current_level: .byte 1             ; Current level (1-based)
 current_len: .byte 0               ; Computed length for current level
 index: .byte 0                     ; Pattern index (used while generating/playing patterns)
@@ -216,6 +217,7 @@ gen_loop:
 ; -----------------------------------------------------------------------------
 Play_Pattern:
     clr.b   r12              ; index = 0
+
 pp_loop:
     mov.w   #pattern, r14
     add.w   r12, r14
@@ -229,22 +231,35 @@ pp_loop:
     cmp.b   #3, r13
     jeq pp_blue
     jmp pp_next
+
 pp_yellow:
     call #Yellow
     jmp pp_show
+    
 pp_green:
     call #Green
     jmp pp_show
+
 pp_red:
     call #Red
     jmp pp_show
+
 pp_blue:
     call #Blue
+
 pp_show:
+    ; set per-level on-time from level_speeds[current_level-1]
+    mov.w   #level_speeds, r14
+    mov.b   &current_level, r15
+    dec.b   r15
+    add.b   r15, r14
+    mov.b   @r14, r12         ; r12 = speed byte
+    mov.w   r12, r4           ; r4 <- on-time for Delay
     call #Delay
     bic.b #01110111b, &P1OUT    ; turn off game leds
     mov.w #2, r4
     call #Delay
+
 pp_next:
     inc.b r12
     cmp.b r12, &current_len
@@ -361,7 +376,7 @@ fh_loop:
     bic.b #BIT0, &P1OUT
     jmp INIT_IDLE
 
-; Level stubs (keep student-style, minimal)
+; Level stubs 
 Easy_Level:
     mov.b #1, &current_level
     call #generatePattern
