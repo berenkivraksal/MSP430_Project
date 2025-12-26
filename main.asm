@@ -44,15 +44,15 @@ index:       .byte 0                ;
     mov.w   #WDTPW+WDTHOLD, &WDTCTL ; stop the Watchdog 
 
 
-    bic.b #00110110b, &P1SEL    ;Let's reset everything.
-    bic.b #00110110b, &P1SEL2   ;Let's reset everything.
+    bic.b #01110111b, &P1SEL    ;Let's reset everything.
+    bic.b #01110111b, &P1SEL2   ;Let's reset everything.
 
     bic.b #01110110b, &P2SEL    ;Let's reset everything.
     bic.b #01110110b, &P2SEL2   ;Let's reset everything.
 
-    bis.b #00110110b, &P1DIR    ;I'm specifying 4 LEDs as outputs.
+    bis.b #01110111b, &P1DIR    ;I'm specifying 4 LEDs as outputs. And also the microprocessor's red and green leds as output.
+    bis.b #01000000b, &P2DIR    ;I'm designating the Win Led as output.
     bic.b #00110110b, &P2DIR    ;I'm designating 4 buttons as input.
-    bis.b #01000000b, &P2DIR    ;I'm specifying Win LED as output.
 
     bis.b #00110110b, &P2REN    ;I'm opening the button resistor because I'm going to operate the button.
     bis.b #00110110b, &P2OUT    ;1 when no button is pressed. 0 when button is pressed.
@@ -62,21 +62,25 @@ INIT_IDLE:
 
 IDLE:
     call #Yellow
+    call #Delay
     call #Check_Start_Button
     cmp.w #0, r6
     jeq START
 
     call #Green
+    call #Delay
     call #Check_Start_Button
     cmp.w #0, r6
     jeq START
 
     call #Red
+    call #Delay
     call #Check_Start_Button
     cmp.w #0, r6
     jeq START
 
     call #Blue
+    call #Delay
     call #Check_Start_Button
     cmp.w #0, r6
     jeq START
@@ -180,6 +184,30 @@ Easter_Egg_Sequence:
     call #Delay
     bic.b #00110110b, &P1OUT ;All off
     ret
+
+START:
+    bic.b #01000000b, &P2OUT    ;Win Led off
+    call #Easy_Level
+    bic.b #00110110b, &P1OUT ;All off
+    mov.b #6, r4    ;2 second delay between levels
+    call #Delay
+    call #Medium_Level
+    bic.b #00110110b, &P1OUT ;All off
+    mov.b #6, r4    ;2 second delay between levels
+    call #Delay
+    call #Hard_Level
+    bic.b #00110110b, &P1OUT ;All off
+    mov.b #6, r4    ;2 second delay between levels
+    call #Delay
+    call #Nightmare_Level
+    bic.b #00110110b, &P1OUT ;All off
+    mov.b #6, r4    ;2 second delay between levels
+    call #Delay
+    jmp WIN_LED
+
+WIN_LED:
+    bis.b #BIT6, &P2OUT ;Win Led on
+    jmp INIT_IDLE
 
 ;-------------------------------------------------------------------------------
 ; Stack Pointer definition
