@@ -405,7 +405,7 @@ Nightmare_Level:
     call #Get_Player_Input
     ret
 
-; -----------------------------------------------------------------------------
+;If we find a hidden Easter egg in the game, the hidden blink pattern should activate.
 Easter_Egg_Sequence:
     bis.b #BIT1, &P1OUT    ;Yellow on
     bic.b #00110100b, &P1OUT
