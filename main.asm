@@ -156,7 +156,36 @@ second_press_ok:
             mov.w   &TAR, R12       ; Capture Timer for the 2nd random step
             and.w   #0x003, R12     ; change the bits to get a value between 0 and 3
             mov.b   R12, &pattern+1 ; Store the second step in RAM
-       
+
+generatePattern:    ; compute current_len from current_level (1..4)
+    mov.b   &current_level, r11
+    cmp.b   #1, r11
+    jeq     set_l1
+    cmp.b   #2, r11
+    jeq     set_l2
+    cmp.b   #3, r11
+    jeq     set_l3
+    mov.b   #8, &current_len
+    jmp     gp_continue
+
+set_l1: mov.b #2, &current_len; jmp gp_continue
+set_l2: mov.b #4, &current_len; jmp gp_continue
+set_l3: mov.b #6, &current_len
+
+gp_continue:
+    clr.b   r12       ; index=0
+    
+gen_loop:
+    mov.w   &TAR, r13
+    and.w   #0x0003, r13
+    mov.w   #pattern, r14
+    add.w   r12, r14
+    mov.b   r13, @r14
+    inc.b   r12
+    cmp.b   r12, &current_len
+    jne gen_loop
+    ret
+
 Easter_Egg_Sequence:
     bis.b #BIT1, &P1OUT    ;Yellow on
     bic.b #00110100b, &P1OUT
