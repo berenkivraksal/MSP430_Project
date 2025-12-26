@@ -79,7 +79,6 @@ IDLE:
 
     jmp IDLE
 
-;We turn on the yellow light for 1 second.
 Yellow:
     bis.b #BIT1, &P1OUT
     bic.b #00110100b, &P1OUT
