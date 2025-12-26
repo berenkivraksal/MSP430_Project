@@ -24,11 +24,25 @@ StopWDT     mov.w   #WDTPW|WDTHOLD,&WDTCTL  ; Stop watchdog timer
 ; Main loop here
 ;-------------------------------------------------------------------------------
 
+
+    .data
+pattern: .byte 0,0,0,0,0,0,0,0; 8 pattern capacity
+level_count:   .byte 0                ; 
+index:       .byte 0                ; 
+
+
+    .text
+          
 ; Yellow Led -> P1.1        Yellow Button -> P2.1
 ; Green Led -> P1.2         Green Button -> P2.2 
 ; Red Led -> P1.4           Red Button -> P2.4
 ; Blue Led -> P1.5          Blue Button -> P2.5
 ; Win Led -> P2.6
+
+
+    mov.w   #0x280, SP      ; Stack Pointer (MSP430G2553 RAM last )
+    mov.w   #WDTPW+WDTHOLD, &WDTCTL ; stop the Watchdog 
+
 
     bic.b #00110110b, &P1SEL    ;Let's reset everything.
     bic.b #00110110b, &P1SEL2   ;Let's reset everything.
@@ -112,6 +126,368 @@ Dloop:
     jne Delay
     ret
 
+<<<<<<< HEAD
+; --- start the game with pushing the yellow light button twice---
+check_start:
+            ; Is yellow button (P2.1) has been pressed?
+            bit.b   #BIT1, &P2IN    ; BIT1 corresponds to P2.1 (Yellow Button)
+            jnz     IDLE            ; If not pressed  stay in Idle mode
+
+            ; --- Capture first random step on first press ---
+            mov.w   &TAR, R12       ; stop the  timer for the 1st random step
+            and.w   #0x003, R12     ; change the bits to get a value between 0 and 3
+            mov.b   R12, &pattern   ; Store the first step in RAM
+
+
+; ---  first press and wait for release ---
+wait_release:
+            ; Wait until the user releases the button to avoid "long press" false triggers
+            bit.b   #BIT1, &P2IN    
+            jz      wait_release    ; Stay here while button is still held down
+            
+            call    #DELAY_50MS     ; Small delay to eliminate mechanical switch bouncing
+
+; --- Wait for the second press  ---
+wait_second:
+            mov.w   #0xFFFF, R10    ; Load a large value into R10 as a timeout counter
+wait_second_inner:                        
+             bit.b   #BIT1, &P2IN    ; Check for the second press on P2.1
+            jz      second_press_ok ; If pressed get the second value
+            dec.w   R10             ; Decrease the timeout counter
+            jnz     wait_second_inner     ; Continue decrease the time until counter becomes zero
+            jmp     IDLE            ; Time has finished without second press, return to Idle
+
+second_press_ok:
+            ; --- Capture second random step on second press ---
+            mov.w   &TAR, R12       ; Capture Timer for the 2nd random step
+            and.w   #0x003, R12     ; change the bits to get a value between 0 and 3
+            mov.b   R12, &pattern+1 ; Store the second step in RAM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=======
 Easter_Egg_Sequence:
     bis.b #BIT1, &P1OUT    ;Yellow on
     bic.b #00110100b, &P1OUT
@@ -131,6 +507,7 @@ Easter_Egg_Sequence:
     bic.b #00110110b, &P1OUT ;All off
     ret
 
+>>>>>>> f002f32fa419b9b2a3b877df119683d8e8194b50
 ;-------------------------------------------------------------------------------
 ; Stack Pointer definition
 ;-------------------------------------------------------------------------------
