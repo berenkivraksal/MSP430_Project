@@ -58,54 +58,49 @@ index:       .byte 0                ;
     bis.b #00110110b, &P2REN    ;I'm opening the button resistor because I'm going to operate the button.
     bis.b #00110110b, &P2OUT    ;1 when no button is pressed. 0 when button is pressed.
 
-INIT_IDLE:
-    mov.w #2, r6
 
+;In IDLE state, the lights will turn on one by one in a loop, and if the yellow button is pressed twice, the game will start.
 IDLE:
     call #Yellow
     call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #check_start
 
     call #Green
     call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #check_start
 
     call #Red
     call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #check_start
 
     call #Blue
     call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #check_start
 
     jmp IDLE
 
+;We turn on the yellow light for 1 second.
 Yellow:
     bis.b #BIT1, &P1OUT
     bic.b #00110100b, &P1OUT
     mov.w #3, r4    ;I'm assigning a value of 3 to r4 to keep the yellow light on for 1 seconds.
     ret
 
+;We turn on the green light for 1 second.
 Green:
     bis.b #BIT2, &P1OUT
     bic.b #00110010b, &P1OUT
     mov.w #3, r4    ;I'm assigning a value of 3 to r4 to keep the green light on for 1 seconds.
     ret
 
+;We turn on the red light for 1 second.
 Red:
     bis.b #BIT4, &P1OUT
     bic.b #00100110b, &P1OUT
     mov.w #3, r4    ;I'm assigning a value of 3 to r4 to keep the red light on for 1 seconds.
     ret
 
+;We turn on the blue light for 1 second.
 Blue:
     bis.b #BIT5, &P1OUT
     bic.b #00010110b, &P1OUT
@@ -125,12 +120,14 @@ Dloop:
 check_start:
             ; Is yellow button (P2.1) has been pressed?
             bit.b   #BIT1, &P2IN    ; BIT1 corresponds to P2.1 (Yellow Button)
-            jnz     IDLE            ; If not pressed  stay in Idle mode
+            jeq get_timer            ; If pressed  go to get_timer
+            ret                     ; If not pressed return
 
+get_timer:
             ; --- Capture first random step on first press ---
-            mov.w   &TAR, R12       ; stop the  timer for the 1st random step
-            and.w   #0x003, R12     ; change the bits to get a value between 0 and 3
-            mov.b   R12, &pattern   ; Store the first step in RAM
+            mov.w   &TAR, r12       ; stop the  timer for the 1st random step
+            and.w   #0x003, r12     ; change the bits to get a value between 0 and 3
+            mov.b   r12, &pattern   ; Store the first step in RAM
 
 
 ; ---  first press and wait for release ---
@@ -139,23 +136,24 @@ wait_release:
             bit.b   #BIT1, &P2IN    
             jz      wait_release    ; Stay here while button is still held down
             
-            call    #DELAY_50MS     ; Small delay to eliminate mechanical switch bouncing
+            mov.w  #3, r4
+            call    #Delay     ; Small delay to eliminate mechanical switch bouncing
 
 ; --- Wait for the second press  ---
 wait_second:
-            mov.w   #0xFFFF, R10    ; Load a large value into R10 as a timeout counter
+            mov.w   #0xFFFF, r10    ; Load a large value into R10 as a timeout counter
 wait_second_inner:                        
              bit.b   #BIT1, &P2IN    ; Check for the second press on P2.1
             jz      second_press_ok ; If pressed get the second value
-            dec.w   R10             ; Decrease the timeout counter
+            dec.w   r10             ; Decrease the timeout counter
             jnz     wait_second_inner     ; Continue decrease the time until counter becomes zero
             jmp     IDLE            ; Time has finished without second press, return to Idle
 
 second_press_ok:
             ; --- Capture second random step on second press ---
-            mov.w   &TAR, R12       ; Capture Timer for the 2nd random step
-            and.w   #0x003, R12     ; change the bits to get a value between 0 and 3
-            mov.b   R12, &pattern+1 ; Store the second step in RAM
+            mov.w   &TAR, r12       ; Capture Timer for the 2nd random step
+            and.w   #0x003, r12     ; change the bits to get a value between 0 and 3
+            mov.b   r12, &pattern+1 ; Store the second step in RAM
 
 generatePattern:    ; compute current_len from current_level (1..4)
     mov.b   &current_level, r11
@@ -186,6 +184,8 @@ gen_loop:
     jne gen_loop
     ret
 
+
+;If we find a hidden Easter egg in the game, the hidden blink pattern should activate.
 Easter_Egg_Sequence:
     bis.b #BIT1, &P1OUT    ;Yellow on
     bic.b #00110100b, &P1OUT
@@ -205,6 +205,7 @@ Easter_Egg_Sequence:
     bic.b #00110110b, &P1OUT ;All off
     ret
 
+;Let's start the game if the Yellow Led is pressed twice.
 START:
     bic.b #01000000b, &P2OUT    ;Win Led off
     call #Easy_Level
@@ -225,9 +226,10 @@ START:
     call #Delay
     jmp WIN_LED
 
+;If we win the game (successfully complete all levels), our Win LED will stay lit until the next game starts (until we enter START again).
 WIN_LED:
     bis.b #BIT6, &P2OUT ;Win Led on
-    jmp INIT_IDLE
+    jmp IDLE
 
 ;-------------------------------------------------------------------------------
 ; Stack Pointer definition
