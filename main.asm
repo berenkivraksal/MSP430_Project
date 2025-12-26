@@ -38,7 +38,8 @@ index:       .byte 0                ;
 ; Red Led -> P1.4           Red Button -> P2.4
 ; Blue Led -> P1.5          Blue Button -> P2.5
 ; Win Led -> P2.6
-
+; Red Led on the microprocessor -> P1.0
+; Green Led on the microprocessor -> P1.6
 
     mov.w   #0x280, SP      ; Stack Pointer (MSP430G2553 RAM last )
     mov.w   #WDTPW+WDTHOLD, &WDTCTL ; stop the Watchdog 
@@ -86,16 +87,6 @@ IDLE:
     jeq START
 
     jmp IDLE
-
-Check_Start_Button:
-    bit.b #00000010b, &P2IN     ;Checking if the yellow button is pressed.
-                                ;If pressed &P2IN = BIT1 = 0, Z=1 -> jeq ise r6--
-    jeq Decrease_Start_Counter
-    ret
-
-Decrease_Start_Counter:
-    dec.w r6
-    ret
 
 Yellow:
     bis.b #BIT1, &P1OUT
@@ -188,19 +179,19 @@ Easter_Egg_Sequence:
 START:
     bic.b #01000000b, &P2OUT    ;Win Led off
     call #Easy_Level
-    bic.b #00110110b, &P1OUT ;All off
+    bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
     call #Medium_Level
-    bic.b #00110110b, &P1OUT ;All off
+    bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
     call #Hard_Level
-    bic.b #00110110b, &P1OUT ;All off
+    bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
     call #Nightmare_Level
-    bic.b #00110110b, &P1OUT ;All off
+    bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
     jmp WIN_LED
