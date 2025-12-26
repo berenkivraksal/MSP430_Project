@@ -28,6 +28,7 @@ StopWDT     mov.w   #WDTPW|WDTHOLD,&WDTCTL  ; Stop watchdog timer
 ; Green Led -> P1.2         Green Button -> P2.2 
 ; Red Led -> P1.4           Red Button -> P2.4
 ; Blue Led -> P1.5          Blue Button -> P2.5
+; Win Led -> P2.6
 
     bic.b #00110110b, &P1SEL    ;Let's reset everything.
     bic.b #00110110b, &P1SEL2   ;Let's reset everything.
