@@ -34,22 +34,35 @@ level_speeds: .byte 3,2,1,1        ; On-time speed per level (Easy -> Nightmare)
 current_level: .byte 1             ; Current level (1-based)
 current_len: .byte 0               ; Computed length for current level
 index: .byte 0                     ; Pattern index (used while generating/playing patterns)
-level_result: .byte 0              ; Result from last level (1=pass,0=fail)
 start_flag: .byte 1                ; Helper flag for start (student-style)
 
 
     .text
-          
+
 ; Yellow Led -> P1.1        Yellow Button -> P2.1
-; Green Led -> P1.2         Green Button -> P2.2 
+; Green Led -> P1.2         Green Button -> P2.2
 ; Red Led -> P1.4           Red Button -> P2.4
 ; Blue Led -> P1.5          Blue Button -> P2.5
 ; Win Led -> P2.6
 ; Red Led on the microprocessor -> P1.0
 ; Green Led on the microprocessor -> P1.6
 
+; Register usage:
+; r4 -> delay counter
+; r5 -> inner delay counter
+; r6 -> speed byte
+; r7 -> Easter Egg expected color
+; r8 -> Easter Egg press count
+; r9 -> Easter Egg last pressed color
+; r10 -> timeout counter for second press
+; r11 -> current level
+; r12 -> index
+; r13 -> color storage
+; r14 -> address pointer
+; r15 -> expected color storage
+
     mov.w   #0x280, SP      ; Stack Pointer (MSP430G2553 RAM last )
-    mov.w   #WDTPW+WDTHOLD, &WDTCTL ; stop the Watchdog 
+    mov.w   #WDTPW+WDTHOLD, &WDTCTL ; stop the Watchdog
 
 
     bic.b #01110111b, &P1SEL    ;Let's reset everything.
@@ -65,34 +78,56 @@ start_flag: .byte 1                ; Helper flag for start (student-style)
     bis.b #00110110b, &P2REN    ;I'm opening the button resistor because I'm going to operate the button.
     bis.b #00110110b, &P2OUT    ;1 when no button is pressed. 0 when button is pressed.
 
+    bic.b #BIT6, &P2OUT ;Win Led off at the beginning.
 
-;In IDLE state, the lights will turn on one by one in a loop, and if the yellow button is pressed twice, the game will start.
+    call #TimerA_Init
+
+INIT_IDLE:
+    mov.w   #0x280, SP      ; Stack Pointer (MSP430G2553 RAM last )
+    mov.w #0, r7                      ; EE expected color = yellow
+    mov.w #0, r8                      ; EE press count
+    mov.w #0, r9                      ; EE last pressed color
+    jmp  IDLE
+
+;In IDLE state, the lights will turn on one by one in a loop, and if the green button is pressed twice, the game will start.
 IDLE:
     call #Yellow
-    call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #Smart_Idle_Delay
+    call #check_start
+    call #Pull_Buttons_for_Easter_Egg
 
     call #Green
-    call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #Smart_Idle_Delay
+    call #check_start
+    call #Pull_Buttons_for_Easter_Egg
 
     call #Red
-    call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #Smart_Idle_Delay
+    call #check_start
+    call #Pull_Buttons_for_Easter_Egg
 
     call #Blue
-    call #Delay
-    call #Check_Start_Button
-    cmp.w #0, r6
-    jeq START
+    call #Smart_Idle_Delay
+    call #check_start
+    call #Pull_Buttons_for_Easter_Egg
 
     jmp IDLE
+
+Smart_Idle_Delay:
+    mov.w #0xFFFF, r5
+Smart_Loop_Outer:
+    mov.w #0xFFFF, r5
+Smart_Loop_Inner:
+    ; Button control (Green Button - P2.2)
+    bit.b   #BIT2, &P2IN        ; Green button pressed?
+    jeq     get_timer_jump      ; If pressed, jump to timer
+
+    dec.w r5
+    jne Smart_Loop_Inner
+    
+    dec.w r4
+    jne Smart_Loop_Outer
+    ret
 
 ;We turn on the yellow light for 1 second.
 Yellow:
@@ -131,57 +166,49 @@ Dloop:
     jne Delay
     ret
 
-DELAY_50MS:               ; ~ small debounce delay (student-style loop)
-    mov.w #0x0C35, r5     ; small count ~50ms-ish depending on clock
-D50loop:
-    dec.w r5
-    jne D50loop
-    ret
-
 TimerA_Init:
     mov.w   #TASSEL_2+MC_2, &TACTL   ; SMCLK, continuous mode
     ret
 
-; --- start the game with pushing the yellow light button twice---
-Check_Start_Button:
+; --- start the game with pushing the green light button twice---
 check_start:
-            ; Is yellow button (P2.1) has been pressed?
-            bit.b   #BIT1, &P2IN    ; BIT1 corresponds to P2.1 (Yellow Button)
-            jnz     IDLE            ; If not pressed  stay in Idle mode
+            ; Is green button (P2.2) has been pressed?
+            bit.b   #BIT2, &P2IN    ; BIT2 corresponds to P2.2 (Green Button)
+            jeq     get_timer            ; If pressed go to get_timer mode
+            ret
 
 get_timer:
             ; --- Capture first random step on first press ---
-            mov.w   &TAR, R12       ; stop the  timer for the 1st random step
-            and.w   #0x003, R12     ; change the bits to get a value between 0 and 3
-            mov.b   R12, &pattern   ; Store the first step in RAM
+            mov.w   &TAR, r12       ; stop the  timer for the 1st random step
+            and.w   #0x003, r12     ; change the bits to get a value between 0 and 3
+            mov.b   r12, &pattern   ; Store the first step in RAM
 
 
 ; ---  first press and wait for release ---
 wait_release:
             ; Wait until the user releases the button to avoid "long press" false triggers
-            bit.b   #BIT1, &P2IN    
-            jz      wait_release    ; Stay here while button is still held down
-            
-            call    #DELAY_50MS     ; Small delay to eliminate mechanical switch bouncing
+            bit.b   #BIT2, &P2IN
+            jeq      wait_release    ; Stay here while button is still held down
+
+            mov.w   #3, r4
+            call    #Delay     ; Small delay to eliminate mechanical switch bouncing
 
 ; --- Wait for the second press  ---
 wait_second:
-            mov.w   #0xFFFF, R10    ; Load a large value into R10 as a timeout counter
-wait_second_inner:                        
-             bit.b   #BIT1, &P2IN    ; Check for the second press on P2.1
-            jz      second_press_ok ; If pressed get the second value
-            dec.w   R10             ; Decrease the timeout counter
-            jnz     wait_second_inner     ; Continue decrease the time until counter becomes zero
+            mov.w   #0xFFFF, r10    ; Load a large value into r10 as a timeout counter
+wait_second_inner:
+             bit.b   #BIT2, &P2IN    ; Check for the second press on P2.2
+            jeq      second_press_ok ; If pressed get the second value
+            dec.w   r10             ; Decrease the timeout counter
+            jne     wait_second_inner     ; Continue decrease the time until counter becomes zero
             jmp     IDLE            ; Time has finished without second press, return to Idle
 
 second_press_ok:
             ; --- Capture second random step on second press ---
-            mov.w   &TAR, R12       ; Capture Timer for the 2nd random step
-            and.w   #0x003, R12     ; change the bits to get a value between 0 and 3
-            mov.b   R12, &pattern+1 ; Store the second step in RAM
-            mov.w   #0, r6          ; signal start to the IDLE loop (r6==0 -> START)
-            mov.b   #0, &level_result ; clear previous level result
-            ret
+            mov.w   &TAR, r12       ; Capture Timer for the 2nd random step
+            and.w   #0x003, r12     ; change the bits to get a value between 0 and 3
+            mov.b   r12, &pattern+1 ; Store the second step in RAM
+            jmp     START           ; Start the game            
 
 generatePattern:    ; compute current_len from current_level (1..4)
     mov.b   &current_level, r11
@@ -194,27 +221,26 @@ generatePattern:    ; compute current_len from current_level (1..4)
     mov.b   #8, &current_len
     jmp     gp_continue
 
-set_l1: mov.b #2, &current_len; jmp gp_continue
-set_l2: mov.b #4, &current_len; jmp gp_continue
+set_l1: mov.b #2, &current_len
+		jmp gp_continue
+set_l2: mov.b #4, &current_len
+		jmp gp_continue
 set_l3: mov.b #6, &current_len
 
 gp_continue:
     clr.b   r12       ; index=0
-    
+
 gen_loop:
-    mov.w   &TAR, r13
-    and.w   #0x0003, r13
+    mov.w   &TAR, r13       ; get random number from Timer
+    and.w   #0x0003, r13    ; limit to 0..3
     mov.w   #pattern, r14
     add.w   r12, r14
     mov.b   r13, @r14
     inc.b   r12
     cmp.b   r12, &current_len
     jne gen_loop
-    ret
 
-; -----------------------------------------------------------------------------
 ; Play pattern and player input routines (student-style, small and clear)
-; -----------------------------------------------------------------------------
 Play_Pattern:
     clr.b   r12              ; index = 0
 
@@ -235,7 +261,7 @@ pp_loop:
 pp_yellow:
     call #Yellow
     jmp pp_show
-    
+
 pp_green:
     call #Green
     jmp pp_show
@@ -246,6 +272,7 @@ pp_red:
 
 pp_blue:
     call #Blue
+    jmp pp_show
 
 pp_show:
     ; set per-level on-time from level_speeds[current_level-1]
@@ -253,8 +280,8 @@ pp_show:
     mov.b   &current_level, r15
     dec.b   r15
     add.b   r15, r14
-    mov.b   @r14, r12         ; r12 = speed byte
-    mov.w   r12, r4           ; r4 <- on-time for Delay
+    mov.b   @r14, r6         ; r6 = speed byte
+    mov.w   r6, r4           ; r4 <- on-time for Delay
     call #Delay
     bic.b #01110111b, &P1OUT    ; turn off game leds
     mov.w #2, r4
@@ -264,74 +291,78 @@ pp_next:
     inc.b r12
     cmp.b r12, &current_len
     jne pp_loop
-    ret
+    jmp Get_Player_Input
 
 Get_Player_Input:
     clr.b r12                ; index = 0
-    mov.b #0, &level_result  ; assume fail until success
+
 gpi_loop:
     ; wait for a button press
     bit.b #BIT1, &P2IN
-    jz gpi_yellow
+    jeq gpi_yellow
     bit.b #BIT2, &P2IN
-    jz gpi_green
+    jeq gpi_green
     bit.b #BIT4, &P2IN
-    jz gpi_red
+    jeq gpi_red
     bit.b #BIT5, &P2IN
-    jz gpi_blue
+    jeq gpi_blue
     jmp gpi_loop
 
 gpi_yellow:
     mov.b #0, r13
-    call #DELAY_50MS
-    jmp gpi_waitrel
+    mov.w   #3, r4
+    call    #Delay
+    jmp gpi_wait_release
 
 gpi_green:
     mov.b #1, r13
-    call #DELAY_50MS
-    jmp gpi_waitrel
+    mov.w   #3, r4
+    call    #Delay
+    jmp gpi_wait_release
 
 gpi_red:
     mov.b #2, r13
-    call #DELAY_50MS
-    jmp gpi_waitrel
+    mov.w   #3, r4
+    call    #Delay
+    jmp gpi_wait_release
 
 gpi_blue:
     mov.b #3, r13
-    call #DELAY_50MS
+    mov.w   #3, r4
+    call    #Delay
 
-gpi_waitrel:
+gpi_wait_release:
     ; wait for release of the same button
     cmp.b #0, r13
-    jeq gpi_wait_y
+    jeq gpi_wait_yellow
     cmp.b #1, r13
-    jeq gpi_wait_g
+    jeq gpi_wait_green
     cmp.b #2, r13
-    jeq gpi_wait_r
+    jeq gpi_wait_red
     cmp.b #3, r13
-    jeq gpi_wait_b
+    jeq gpi_wait_blue
 
-gpi_wait_y:
+gpi_wait_yellow:
     bit.b #BIT1, &P2IN
-    jnz gpi_rel_done
-    jmp gpi_wait_y
+    jne gpi_release_done
+    jmp gpi_wait_yellow
 
-gpi_wait_g:
+gpi_wait_green:
     bit.b #BIT2, &P2IN
-    jnz gpi_rel_done
-    jmp gpi_wait_g
+    jne gpi_release_done
+    jmp gpi_wait_green
 
-gpi_wait_r:
+gpi_wait_red:
     bit.b #BIT4, &P2IN
-    jnz gpi_rel_done
-    jmp gpi_wait_r
+    jne gpi_release_done
+    jmp gpi_wait_red
 
-gpi_wait_b:
+gpi_wait_blue:
     bit.b #BIT5, &P2IN
-    jnz gpi_rel_done
-    jmp gpi_wait_b
+    jne gpi_release_done
+    jmp gpi_wait_blue
 
-gpi_rel_done:
+gpi_release_done:
     ; compare with pattern
     mov.w #pattern, r14
     add.w r12, r14
@@ -340,7 +371,6 @@ gpi_rel_done:
     jeq gpi_ok
     ; wrong button -> failure
     call #Failure_Handler
-    mov.b #0, &level_result
     ret
 
 gpi_ok:
@@ -349,14 +379,13 @@ gpi_ok:
     jne gpi_loop
     ; all matched
     call #Success_Handler
-    mov.b #1, &level_result
     ret
 
 Success_Handler:
     bis.b #BIT6, &P1OUT     ; on-board green (short)
     mov.w #3, r4
     call #Delay
-    bic.b #01000000b, &P1OUT
+    bic.b #BIT6, &P1OUT
     ret
 
 Failure_Handler:
@@ -364,6 +393,7 @@ Failure_Handler:
     mov.w #3, r4
     call #Delay
     mov.w #3, r13           ; blink 3 times ~2s
+
 fh_loop:
     bis.b #01110111b, &P1OUT
     mov.w #2, r4
@@ -376,7 +406,7 @@ fh_loop:
     bic.b #BIT0, &P1OUT
     jmp INIT_IDLE
 
-; Level stubs 
+; Level stubs
 Easy_Level:
     mov.b #1, &current_level
     call #generatePattern
@@ -406,44 +436,137 @@ Nightmare_Level:
     ret
 
 ;If we find a hidden Easter egg in the game, the hidden blink pattern should activate.
-Easter_Egg_Sequence:
-    bis.b #BIT1, &P1OUT    ;Yellow on
-    bic.b #00110100b, &P1OUT
-    mov.w #3, r4
-    call #Delay
-    bis.b #BIT2, &P1OUT    ;Yellow on, Green on
-    bic.b #00110000b, &P1OUT
-    mov.w #3, r4
-    call #Delay
-    bis.b #BIT4, &P1OUT    ;Yellow on, Green on, Red on
-    bic.b #00100000b, &P1OUT
-    mov.w #3, r4
-    call #Delay
-    bis.b #BIT5, &P1OUT    ;All on
-    mov.w #6, r4
-    call #Delay
-    bic.b #00110110b, &P1OUT ;All off
+Pull_Buttons_for_Easter_Egg:
+    bit.b   #BIT1, &P2IN
+    jeq      ee_yellow
+
+    bit.b   #BIT2, &P2IN
+    jeq      ee_green
+
+    bit.b   #BIT4, &P2IN
+    jeq      ee_red
+
+    bit.b   #BIT5, &P2IN
+    jeq      ee_blue
     ret
 
-;Let's start the game if the Yellow Led is pressed twice.
+ee_yellow:
+    mov.w #0, r9
+    call #Check_Easter_Egg
+ee_yellow_wait:
+    bit.b #BIT1, &P2IN
+    jeq    ee_yellow_wait
+    ret
+
+ee_green:
+    mov.w #1, r9
+    call #Check_Easter_Egg
+ee_green_wait:
+    bit.b #BIT2, &P2IN
+    jeq    ee_green_wait
+    ret
+
+ee_red:
+    mov.w #2, r9
+    call #Check_Easter_Egg
+ee_red_wait:
+    bit.b #BIT4, &P2IN
+    jeq    ee_red_wait
+    ret
+
+ee_blue:
+    mov.w #3, r9
+    call #Check_Easter_Egg
+ee_blue_wait:
+    bit.b #BIT5, &P2IN
+    jeq    ee_blue_wait
+    ret
+
+
+Check_Easter_Egg:
+    cmp.w r7, r9
+    jne   ee_reset
+
+    inc.w r8
+    cmp.w #2, r8
+    jne   ee_return
+
+    mov.w #0, r8
+    inc.w r7
+    cmp.w #4, r7
+    jeq   Easter_Egg_Sequence
+
+ee_return:
+    ret
+
+ee_reset:
+    mov.w #0, r7
+    mov.w #0, r8
+    ret
+
+
+
+;If we find a hidden Easter egg in the game, the hidden blink pattern should activate.
+Easter_Egg_Sequence:
+    bic.b #00110110b, &P1OUT          ; All off
+
+    bis.b #BIT5, &P1OUT               ; Blue
+    mov.w #3, r4
+    call #Delay
+
+    bis.b #BIT4, &P1OUT               ; Blue + Red
+    mov.w #3, r4
+    call #Delay
+
+    bis.b #BIT2, &P1OUT               ; Blue + Red + Green
+    mov.w #3, r4
+    call #Delay
+
+    bis.b #BIT1, &P1OUT               ; All on
+    mov.w #6, r4
+    call #Delay
+
+    bic.b #00110110b, &P1OUT          ; All off (blink end)
+    mov.w #3, r4
+    call #Delay
+
+    bis.b #00110110b, &P1OUT          ; All on
+    mov.w #6, r4
+    call #Delay
+
+    bic.b #00110110b, &P1OUT          ; All off
+    mov.w #3, r4
+    call #Delay
+
+    mov.w #0, r7
+    mov.w #0, r8
+    ret
+
+;Let's start the game if the Green Led is pressed twice.
 START:
-    bic.b #01000000b, &P2OUT    ;Win Led off
+    bic.b #BIT6, &P2OUT    ;Win Led off
+    bic.b #01110111b, &P1OUT ;All off
+
     call #Easy_Level
     bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
+
     call #Medium_Level
     bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
+
     call #Hard_Level
     bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
+
     call #Nightmare_Level
     bic.b #01110111b, &P1OUT ;All off
     mov.b #6, r4    ;2 second delay between levels
     call #Delay
+
     jmp WIN_LED
 
 ;If we win the game (successfully complete all levels), our Win LED will stay lit until the next game starts (until we enter START again).
